@@ -1,6 +1,6 @@
 ---
 title: "MATH 216 Homework 3"
-author: "WRITE YOUR NAME HERE"
+author: "Phil Hoxie"
 output: html_document
 ---
 
@@ -9,6 +9,10 @@ suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(dplyr))
 suppressPackageStartupMessages(library(lubridate))
 suppressPackageStartupMessages(library(Quandl))
+suppressPackageStartupMessages(library(tidyr))
+suppressPackageStartupMessages(library(scales))
+suppressPackageStartupMessages(library(knitr))
+suppressPackageStartupMessages(library(plotly))
 ```
 
 
@@ -16,9 +20,9 @@ suppressPackageStartupMessages(library(Quandl))
 
 Please indicate
 
-* Who you collaborated with:
-* Roughly how much time you spent on this HW:
-* What gave you the most trouble:
+* Who you collaborated with:I pulled a bit of code from the HW-2 markdown file (the code on jobs)
+* Roughly how much time you spent on this HW: 9
+* What gave you the most trouble:The dates for the Jukebox set  
 * Any comments you have: 
 
 
@@ -35,6 +39,7 @@ profiles <- read.csv("data/profiles.csv", header=TRUE) %>%
   tbl_df()
 jukebox <- read.csv("data/jukebox.csv", header=TRUE) %>% 
   tbl_df()
+
 ```
 
 
@@ -52,10 +57,73 @@ specifically the OkCupid dataset.
 Using your exploratory data analysis from HW-2, fit a logistic regression to
 predict individual's gender and interpret your results.
 
-```{r, echo=FALSE, fig.width=12, fig.height=6}
+```{r, echo=FALSE, fig.width=12, results='hide', fig.height=6}
+profiles <-  profiles %>% mutate(income = replace(income, income<0, NA))
+
+profiles <- profiles %>% 
+  mutate(female = ifelse(sex=="f", 1, 0))
+
+profiles <- profiles %>% 
+  mutate(athletic = ifelse(body_type=="athletic", 1, 0))
+
+profiles <- profiles %>% 
+  mutate(curvy = ifelse(body_type=="curvy", 1, 0))
+
+profiles <- profiles %>% 
+  mutate(rep.inc = ifelse(is.na(income), 0, 1))
+
+find_query <- function(char.vector, query){
+  which.has.query <- grep(query, char.vector, ignore.case = TRUE)
+  length(which.has.query) != 0
+}
+profile_has_word <- function(data.frame, query){
+  query <- tolower(query)
+  has.query <- apply(data.frame, 1, find_query, query=query)
+  return(has.query)
+}
+
+# Search for the string "wine"
+profiles$has.wine <- profile_has_word(data.frame = profiles, query = "wine")
+x <- table(profiles$has.wine)
+x
+
+profiles <- profiles %>% 
+  mutate(has.wine = ifelse(has.wine == TRUE, 1, 0))
+
+profiles <-  profiles %>% mutate(income = replace(income, income<0, NA))
+
+profiles$is.smoker <- profiles$smokes
+levels(profiles$is.smoker) <- c("NA", "no", "yes", "yes", "yes", "yes")
+count(profiles, is.smoker)
+
+profiles <- profiles %>% 
+  mutate(is.smoker = ifelse(is.smoker == "yes", 1, 0))
+
+profiles <- profiles %>% 
+  mutate(is.admin = ifelse(job == "clerical / administrative", 1, 0))
+
+profiles <- profiles %>% 
+  mutate(is.med = ifelse(job == "medicine / health", 1, 0))
+
+profiles <- profiles %>% 
+  mutate(is.ed = ifelse(job == "education / academia", 1, 0))
+
+profiles <- profiles %>% 
+  mutate(is.tech = ifelse(job == "computer / hardware / software", 1, 0))
+
+profiles <- profiles %>% 
+  mutate(is.construction = ifelse(job == "construction / craftsmanship", 1, 0))
 
 ```
 
+```{r, echo=FALSE, fig.width=12, fig.height=6}
+model.all <- glm(female ~ height + has.wine + is.smoker + athletic + rep.inc + is.admin + is.med + is.ed + is.tech + is.construction, data=profiles, family=binomial)
+kable(summary(model.all))
+all <- coefficients(model.all)
+kable(1/(1+exp(-all)))
+```
+
+To be perfectly honest, I am unsure as to how to interpert each individual coefficient. 
 
 ### b)
 
@@ -63,7 +131,11 @@ Plot a histogram of the fitted probabilities $\widehat{p}_i$ for all users $i=1,
 \ldots, n=59946$ in your dataset.
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
-
+threshold <- 0.5
+fit <- qplot(fitted(model.all)) + xlab("Fitted p.hat")+
+  ggtitle("Fitted Values Histogram")+ 
+  geom_vline(xintercept=threshold, col="red", size=1)
+fit
 ```
 
 
@@ -80,9 +152,13 @@ predicted sex to the actual sex of all users. The sum of all the elements in
 your table should be $n=59946$. Comment on how well our predictions fared.
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
+profiles <- profiles %>% 
+  mutate(p.hat = fitted(model.all), na.rm == TRUE)
 
+model.all.na <- glm(female ~ height + has.wine + is.smoker + athletic + rep.inc + is.admin + is.med + is.ed + is.tech + is.construction, data=profiles, family=binomial, na.pass=TRUE)
+summary(model.all.na)
 ```
-
+This code is not running... it seams to be because the regression dropped the na.s I tried to fix it...
 
 ### d)
 
@@ -109,11 +185,33 @@ mean anything to most people).
 
 What seasonal (i.e. cyclical) patterns do you observe?
 
-```{r, echo=FALSE, fig.width=12, fig.height=6}
+```{r, echo=FALSE, results='hide', fig.width=12, fig.height=6}
 
+jukebox <- jukebox %>% 
+  mutate(date = parse_date_time(date_time, "%b %d %H%M%S %y" )) 
+
+jukebox <- jukebox %>% 
+  mutate(month = month(date), day = day(date), year = year(date)) 
+
+jukebox <- jukebox %>% 
+  unite(md, month, day, sep = ".")
+
+songs.by.date <- jukebox %>% 
+  group_by(md) %>% 
+  tally() 
 ```
 
+```{r, echo=FALSE, fig.width=12, fig.height=6}
+p <- ggplot(songs.by.date, aes(x=as.Date(md, "%m.%d"), y=n)) + 
+  geom_point() + 
+  scale_x_date(breaks=date_breaks("month"), labels=date_format("%m"))+
+  xlab("Months")+
+  ylab("Number of Songs Played")+
+  ggtitle("Total Songs Played by Date 2003-2009")
+p
+```
 
+There is a clear drop off in songs played during the summer. This makes sense becase school is not in session and there are fewer people on campus. 
 
 
 
@@ -126,7 +224,23 @@ shift" during the academic year? Define
 * the academic year as September through May (inclusive)
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
+jukebox <- jukebox %>% 
+  mutate(hr = hour(date), min = minute(date), sec = second(date), month = month(date))
 
+jukebox <- jukebox %>% 
+  mutate(graveyard = ifelse(month>=9 & hr>=0 & hr<=8,1, ifelse(month<=5 & hr>=0 & hr<=8, 1,0)))
+
+grave.yard <- jukebox %>% 
+  group_by(month, graveyard) %>% 
+  tally()
+
+grave.yard.artists <- jukebox %>% 
+  filter(graveyard == 1) %>% 
+  group_by(artist) %>% 
+  tally() %>% 
+  arrange(desc(n)) %>% 
+  slice(1:10)
+kable(grave.yard.artists)
 ```
 
 
@@ -145,12 +259,48 @@ Let the reference currency be US dollars. Analyze these results and provide
 insight to a foreign currency exchanger.
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
+bitcoin <- Quandl("COINBASE/USD") %>% 
+  tbl_df() %>% 
+  rename(bitcoin.usd = High)
+gold <- Quandl("BUNDESBANK/BBK01_WT5511") %>% 
+  tbl_df() %>% 
+  rename(gold.usd = Value)
 
+prices <- left_join(bitcoin, gold, by = "Date") %>% 
+  select(Date, bitcoin.usd, gold.usd) 
+
+prices <- prices %>% 
+  mutate(bit.perc.chng = ((bitcoin.usd - lag(bitcoin.usd))/(lag(bitcoin.usd))))
+
+prices <- prices %>% 
+  mutate(gold.perc.chng = ((gold.usd - lag(gold.usd))/(lag(gold.usd))))
+
+bg <- ggplot(data = prices, aes(x = gold.perc.chng, y = bit.perc.chng))+
+  geom_point()+
+  ggtitle("Comparison of Percent Change in Price of Bitcoin and Gold")+
+  xlab("Daily Percent Change in Gold Price (USD)")+
+  ylab("Daily Percent Change in Bitcoin Price (USD)")
+bg
+
+reg <- lm(data = prices, gold.perc.chng ~ bit.perc.chng)
+kable(summary(reg))
 ```
 
+Note: Gold had missing observations that were dropped for the sake of comparison. 
 
+```{r, echo=FALSE, fig.width=12, fig.height=6}
+prices.na.rm <- prices %>% 
+  na.omit()
 
-
+bg.time <- ggplot(data = prices.na.rm, aes(x = Date)) + 
+  geom_line(aes(y = gold.usd), col = "red") + 
+  geom_line(aes(y = bitcoin.usd), col = "blue")+
+  xlab("Date")+
+  ylab("Price (USD)")+
+  ggtitle("Price (USD) of Gold and Bitcoin Over Time")
+ggplotly(bg.time)
+```
+There seems to be no real correlation between Bitcoin and Gold Prices. 
 
 ## Question 5:
 
@@ -160,10 +310,42 @@ comparing cheese and milk production in the US from 1930 to today. Comment on th
 * Cheese [page](https://www.quandl.com/data/USDANASS/NASS_CHEESEPRODUCTIONMEASUREDINLB-Cheese-Production-Measured-In-Lb)
 * Milk [page](https://www.quandl.com/data/USDANASS/NASS_MILKPRODUCTIONMEASUREDINLB-Milk-Production-Measured-In-Lb)
 
-```{r, echo=FALSE, fig.width=12, fig.height=6}
+```{r, echo=FALSE, results = "hide", fig.width=12, fig.height=6}
 cheese <- Quandl("USDANASS/NASS_CHEESEPRODUCTIONMEASUREDINLB") %>% 
   tbl_df()
 milk <-  Quandl("USDANASS/NASS_MILKPRODUCTIONMEASUREDINLB") %>% 
   tbl_df()
+
+dairy <- left_join(cheese, milk, by = "Date") %>% 
+  mutate(cheese.price = Value.x, milk.price = Value.y, date = Date) %>% 
+  select(date, cheese.price, milk.price)
+
+dairy.long <- dairy %>% 
+  rename(cheese = cheese.price, milk = milk.price) %>% 
+  gather(key = product, price, cheese:milk) %>% 
+  na.omit()
 ```
+
+```{r, echo=FALSE, fig.width=12, fig.height=6}
+mc <- ggplot(data = dairy.long, aes(x=date, y = price, color = product))+
+  geom_line()+
+  ylab("Price (USD)")+
+  ggtitle("Milk and Cheese Prices over Time")
+ggplotly(mc)
+```
+
+```{r, echo=FALSE, fig.width=12, fig.height=6}
+dairy.index <- dairy %>% 
+  mutate(milk = (milk.price/1.09412e+11)*100, 
+         cheese = (cheese.price/785490000)*100) %>% 
+  gather(key = product, price.index.1940, cheese:milk) %>% 
+  na.omit()
+
+mc.index <- ggplot(data = dairy.index, aes(x=date, y = price.index.1940, color = product))+
+  geom_line()+
+  ylab("Indexed Prices (USD, 1940)")+
+  ggtitle("Milk and Cheese Indexed Prices over Time")
+ggplotly(mc.index)
+```
+
 
