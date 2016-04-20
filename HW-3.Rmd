@@ -21,9 +21,9 @@ suppressPackageStartupMessages(library(plotly))
 Please indicate
 
 * Who you collaborated with:I pulled a bit of code from the HW-2 markdown file (the code on jobs)
-* Roughly how much time you spent on this HW: 9
-* What gave you the most trouble:The dates for the Jukebox set  
-* Any comments you have: 
+* Roughly how much time you spent on this HW: 11
+* What gave you the most trouble:The dates for the Jukebox set and using the predict function 
+* Any comments you have: 3 missing observations accounted for most of my wasted time on this assignment. It should have been more like 7 hours rather than 11. 
 
 
 ## Data
@@ -37,6 +37,7 @@ jukebox from Nov 30, 2003 to Jan 22, 2009 (included in `HW-3` folder).
 # DO NOT EDIT THIS SECTION!
 profiles <- read.csv("data/profiles.csv", header=TRUE) %>% 
   tbl_df()
+profiles <- na.omit(profiles)
 jukebox <- read.csv("data/jukebox.csv", header=TRUE) %>% 
   tbl_df()
 
@@ -118,12 +119,14 @@ profiles <- profiles %>%
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
 model.all <- glm(female ~ height + has.wine + is.smoker + athletic + rep.inc + is.admin + is.med + is.ed + is.tech + is.construction, data=profiles, family=binomial)
-kable(summary(model.all))
+kable(summary(model.all)$coef, digits=2)
 all <- coefficients(model.all)
-kable(1/(1+exp(-all)))
+coef <- (1/(1+exp(-all))) %>% round(3)
+data.frame(coef) %>% kable()
+
 ```
 
-To be perfectly honest, I am unsure as to how to interpert each individual coefficient. 
+
 
 ### b)
 
@@ -131,6 +134,7 @@ Plot a histogram of the fitted probabilities $\widehat{p}_i$ for all users $i=1,
 \ldots, n=59946$ in your dataset.
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
+profiles <- profiles %>% mutate(p.hat = fitted(model.all))
 threshold <- 0.5
 fit <- qplot(fitted(model.all)) + xlab("Fitted p.hat")+
   ggtitle("Fitted Values Histogram")+ 
@@ -152,13 +156,15 @@ predicted sex to the actual sex of all users. The sum of all the elements in
 your table should be $n=59946$. Comment on how well our predictions fared.
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
-profiles <- profiles %>% 
-  mutate(p.hat = fitted(model.all), na.rm == TRUE)
+profiles <- profiles %>% mutate(predict.female = ifelse(p.hat>=.5, 1, 0))
 
-model.all.na <- glm(female ~ height + has.wine + is.smoker + athletic + rep.inc + is.admin + is.med + is.ed + is.tech + is.construction, data=profiles, family=binomial, na.pass=TRUE)
-summary(model.all.na)
+predictions <- profiles %>% 
+  group_by(predict.female, female) %>% 
+  tally()
+kable(predictions)
 ```
-This code is not running... it seams to be because the regression dropped the na.s I tried to fix it...
+
+Of the 59,943 Okcupid users, 50,867 were correctly identified as male or female using my model. That is a success rate of about 85%, which is fairly good. 
 
 ### d)
 
@@ -213,7 +219,27 @@ p
 
 There is a clear drop off in songs played during the summer. This makes sense becase school is not in session and there are fewer people on campus. 
 
+```{r, echo=FALSE, fig.width=12, fig.height=6}
+jukebox <- jukebox %>% 
+  unite(mdy, md, year, sep = ".")
 
+songs.over.time <- jukebox %>% 
+  group_by(mdy) %>% 
+  tally() 
+songs.over.time <- songs.over.time %>% 
+  mutate(date = mdy(mdy))
+
+
+time.plot <- ggplot(songs.over.time, aes(x=date, y=n)) + 
+  geom_point() +
+  geom_smooth(n=30)+
+  xlab("Date")+
+  ylab("Number of Songs Played")+
+  ggtitle("Total Songs Played each Day 2003-2009")
+time.plot
+```
+
+When you look at the data over the entire time period, and add a smoother, it is clear that the cyclical trend follows the school year. More songs are played durind the semester, and drop offs can be seen over winter and summer breaks. 
 
 ## Question 3:
 
@@ -243,8 +269,7 @@ grave.yard.artists <- jukebox %>%
 kable(grave.yard.artists)
 ```
 
-
-
+Not all is lost when it comes to Reed students, because some of them seem to have decent taste in late night hangout music. Outkast is a poor choice, which was the most played. However, the Beatles, Led Zeplin, the Stones, and the Chili Peppers are good picks no matter what time of night. 
 
 
 ## Question 4:
@@ -283,10 +308,12 @@ bg <- ggplot(data = prices, aes(x = gold.perc.chng, y = bit.perc.chng))+
 bg
 
 reg <- lm(data = prices, gold.perc.chng ~ bit.perc.chng)
-kable(summary(reg))
+kable(summary(reg)$coef, digits=2)
 ```
 
-Note: Gold had missing observations that were dropped for the sake of comparison. 
+Note: Gold had missing observations that were dropped for the sake of comparison.
+
+The p-value for the regression is insignificant, therefore we cannot reject the null hypothesis that there is no correlation between the percentage change in bitcoin and gold prices. 
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
 prices.na.rm <- prices %>% 
@@ -300,7 +327,19 @@ bg.time <- ggplot(data = prices.na.rm, aes(x = Date)) +
   ggtitle("Price (USD) of Gold and Bitcoin Over Time")
 ggplotly(bg.time)
 ```
-There seems to be no real correlation between Bitcoin and Gold Prices. 
+
+It looks like there might be an ever so slight negative correlation between the change in prices. However, the previous regression and plot show no such relationship at a statistically significant level.
+
+```{r, echo=FALSE, fig.width=12, fig.height=6}
+bg.time.perc <- ggplot(data = prices.na.rm, aes(x = Date))+
+  geom_line(aes(y = gold.perc.chng), col = "red") + 
+  geom_line(aes(y = bit.perc.chng), col = "blue")+
+  ggtitle("Percent Change in Price of Bitcoin and Gold Over Time")+
+  xlab("Date")+
+  ylab("Percent Change in Price (USD)")
+ggplotly(bg.time.perc)
+```
+The trading advice that I would give is to trade bitcoin because it is much more volitile which could lead to short-term profits if timed correctly. Gold, on the other hand is much more expensive and it's percentage change in price curve seems to be a lot less volitile.  
 
 ## Question 5:
 
@@ -334,6 +373,8 @@ mc <- ggplot(data = dairy.long, aes(x=date, y = price, color = product))+
 ggplotly(mc)
 ```
 
+Milk and Cheese prices are of completely different magnitudes, so in order to show what is really going on, it is necessary to index the prices. Indexing uses a reference year to show the relative change. The formula is Pindex = (Pt/Pref)*100. I chose to use 1940 as the index reference year, so both the milk and cheese price indexes are equal to 100 in 1940. 
+
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
 dairy.index <- dairy %>% 
   mutate(milk = (milk.price/1.09412e+11)*100, 
@@ -348,4 +389,4 @@ mc.index <- ggplot(data = dairy.index, aes(x=date, y = price.index.1940, color =
 ggplotly(mc.index)
 ```
 
-
+This chart shows that milk prices have actually remained fairly stable over time relative to the massive increase in cheese prices. 
